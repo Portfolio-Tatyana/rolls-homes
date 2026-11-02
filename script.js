@@ -84,10 +84,10 @@ filters.forEach((button) => button.addEventListener("click", () => {
 }));
 
 const dialog = document.querySelector("[data-dialog]");
-const dialogTitle = document.querySelector("[data-title]");
-const dialogInfo = document.querySelector("[data-info]");
+const dialogTitle = dialog?.querySelector("[data-dialog-title]");
+const dialogInfo = dialog?.querySelector("[data-dialog-info]");
 const showDetails = (card) => {
-  if (!dialog) return;
+  if (!dialog || !dialogTitle || !dialogInfo) return;
   dialogTitle.textContent = card.dataset.title || "Объект Rolls Homes";
   dialogInfo.textContent = card.dataset.info || "Расскажите нам, что ищете, и мы подберём подходящий формат.";
   dialog.showModal();
@@ -165,5 +165,7 @@ document.querySelector("[data-form]")?.addEventListener("submit", (event) => {
   window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
 });
 document.querySelector("[data-year]").textContent = new Date().getFullYear();
+
+
 
 
