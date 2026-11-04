@@ -22,7 +22,11 @@ const setHeader = () => {
   header?.style.setProperty("--read-progress", `${maxScroll > 0 ? (window.scrollY / maxScroll) * 100 : 0}%`);
 };
 setHeader();
-window.addEventListener("scroll", setHeader, { passive: true });
+let headerFrame = 0;
+window.addEventListener("scroll", () => {
+  if (headerFrame) return;
+  headerFrame = requestAnimationFrame(() => { setHeader(); headerFrame = 0; });
+}, { passive: true });
 
 // БУРГЕР: открытие/закрытие 3D-панели, фон, Esc и ссылки.
 const menu = document.querySelector("[data-menu]");
@@ -55,6 +59,15 @@ if ("IntersectionObserver" in window) {
   }), { threshold: .12, rootMargin: "0px 0px -30px 0px" });
   reveals.forEach((el) => observer.observe(el));
 } else reveals.forEach((el) => el.classList.add("visible"));
+
+// ПАУЗА ВНЕ ЭКРАНА: останавливает декоративные циклы, пока их блок не виден.
+const motionTargets = document.querySelectorAll(".ticker, .service, .about-art, [data-orbit], [data-build-scene]");
+if ("IntersectionObserver" in window) {
+  const motionObserver = new IntersectionObserver((entries) => entries.forEach(({ target, isIntersecting }) => {
+    target.classList.toggle("motion-paused", !isIntersecting);
+  }), { rootMargin: "80px" });
+  motionTargets.forEach((target) => motionObserver.observe(target));
+}
 
 // ФОТО: успешная загрузка перекрывает SVG; если файла нет, остаётся иллюстрация.
 document.querySelectorAll("[data-photo]").forEach((photo) => {
@@ -105,15 +118,27 @@ document.querySelector("[data-range]")?.addEventListener("input", (event) => com
 
 if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
   document.querySelectorAll("[data-tilt], .card, .service").forEach((card) => {
+    let pointerEvent = null, frame = 0;
     card.addEventListener("pointermove", (event) => {
-      const box = card.getBoundingClientRect();
-      const x = (event.clientX - box.left) / box.width - .5;
-      const y = (event.clientY - box.top) / box.height - .5;
-      card.style.setProperty("--px", `${(x + .5) * 100}%`);
-      card.style.setProperty("--py", `${(y + .5) * 100}%`);
-      card.style.transform = `perspective(950px) rotateX(${y * -4}deg) rotateY(${x * 4}deg) translateZ(5px)`;
+      pointerEvent = event;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!pointerEvent) return;
+        const box = card.getBoundingClientRect();
+        const x = (pointerEvent.clientX - box.left) / box.width - .5;
+        const y = (pointerEvent.clientY - box.top) / box.height - .5;
+        card.classList.add("tilting");
+        card.style.setProperty("--px", `${(x + .5) * 100}%`);
+        card.style.setProperty("--py", `${(y + .5) * 100}%`);
+        card.style.transform = `perspective(950px) rotateX(${y * -3}deg) rotateY(${x * 3}deg) translateZ(4px)`;
+      });
     });
-    card.addEventListener("pointerleave", () => { card.style.transform = ""; });
+    card.addEventListener("pointerleave", () => {
+      pointerEvent = null;
+      card.classList.remove("tilting");
+      card.style.transform = "";
+    });
   });
 }
 
@@ -121,16 +146,33 @@ if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
 const orbit = document.querySelector("[data-orbit]");
 const model = document.querySelector("[data-model]");
 if (orbit && model) {
-  let dragging = false, lastX = 0, lastY = 0, rx = -25, ry = 42;
-  const paint = () => { model.style.setProperty("--rx", `${rx}deg`); model.style.setProperty("--ry", `${ry}deg`); };
+  let dragging = false, lastX = 0, lastY = 0, rx = -25, ry = 42, targetRX = rx, targetRY = ry, frame = 0;
+  const paint = () => {
+    if (frame) return;
+    const settle = () => {
+      rx += (targetRX - rx) * .18;
+      ry += (targetRY - ry) * .18;
+      model.style.setProperty("--rx", `${rx}deg`);
+      model.style.setProperty("--ry", `${ry}deg`);
+      if (Math.abs(targetRX - rx) < .1 && Math.abs(targetRY - ry) < .1) {
+        rx = targetRX; ry = targetRY;
+        model.style.setProperty("--rx", `${rx}deg`);
+        model.style.setProperty("--ry", `${ry}deg`);
+        frame = 0;
+        return;
+      }
+      frame = requestAnimationFrame(settle);
+    };
+    frame = requestAnimationFrame(settle);
+  };
   orbit.addEventListener("pointerdown", (event) => {
     dragging = true; lastX = event.clientX; lastY = event.clientY;
     orbit.classList.add("dragging"); orbit.setPointerCapture(event.pointerId);
   });
   orbit.addEventListener("pointermove", (event) => {
     if (!dragging) return;
-    ry += (event.clientX - lastX) * .45;
-    rx = Math.max(-60, Math.min(8, rx - (event.clientY - lastY) * .25));
+    targetRY += (event.clientX - lastX) * .45;
+    targetRX = Math.max(-60, Math.min(8, targetRX - (event.clientY - lastY) * .25));
     lastX = event.clientX; lastY = event.clientY; paint();
   });
   const stop = () => { dragging = false; orbit.classList.remove("dragging"); };
@@ -138,10 +180,10 @@ if (orbit && model) {
   orbit.addEventListener("pointercancel", stop);
   orbit.addEventListener("keydown", (event) => {
     const amount = event.shiftKey ? 18 : 8;
-    if (event.key === "ArrowLeft") ry -= amount;
-    else if (event.key === "ArrowRight") ry += amount;
-    else if (event.key === "ArrowUp") rx = Math.min(8, rx + amount);
-    else if (event.key === "ArrowDown") rx = Math.max(-60, rx - amount);
+    if (event.key === "ArrowLeft") targetRY -= amount;
+    else if (event.key === "ArrowRight") targetRY += amount;
+    else if (event.key === "ArrowUp") targetRX = Math.min(8, targetRX + amount);
+    else if (event.key === "ArrowDown") targetRX = Math.max(-60, targetRX - amount);
     else return;
     event.preventDefault(); paint();
   });
